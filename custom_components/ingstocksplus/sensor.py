@@ -4,7 +4,11 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -13,8 +17,6 @@ from .const import (
     CONF_NAME,
     CONF_INSTRUMENT_TYPE,
     INSTRUMENT_TYPE_AUTO,
-    INSTRUMENT_TYPE_ETF,
-    INSTRUMENT_TYPE_STOCK,
 )
 from .coordinator import INGStocksCoordinator
 
@@ -28,35 +30,6 @@ def _safe_float(v):
         return None
 
 
-def _instrument_icon_auto(data: dict, name: str | None) -> str:
-    """Auto-Erkennung: erst Typ-Felder aus Coordinator nutzen, sonst Heuristik über Name."""
-    for k in ("instrument_type", "instrument_category", "instrument_group", "security_type", "asset_class"):
-        v = data.get(k)
-        if isinstance(v, str) and v.strip():
-            s = v.lower()
-            if "etf" in s or "ucits" in s or "fund" in s or "fonds" in s:
-                return "mdi:chart-box-outline"  # ETF/Basket
-            if "stock" in s or "equity" in s or "aktie" in s or "share" in s:
-                return "mdi:chart-line"  # Aktie
-
-    if name:
-        n = name.lower()
-        if "etf" in n or "ucits" in n or "fund" in n or "fonds" in n:
-            return "mdi:chart-box-outline"
-        return "mdi:chart-line"
-
-    return "mdi:finance"
-
-
-def _instrument_icon_for_type(instrument_type: str, data: dict, name: str | None) -> str:
-    """Setzt ETF/Aktie Icon je nach manueller Auswahl, sonst Auto."""
-    if instrument_type == INSTRUMENT_TYPE_ETF:
-        return "mdi:chart-box-outline"
-    if instrument_type == INSTRUMENT_TYPE_STOCK:
-        return "mdi:chart-line"
-    return _instrument_icon_auto(data, name)
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -64,49 +37,68 @@ async def async_setup_entry(
 ) -> None:
     coordinator: INGStocksCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Anzeige-Name
+    # Display name (options override entry data)
     custom_name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME))
     if custom_name:
         coordinator.display_name = custom_name
     else:
         coordinator.display_name = (coordinator.data or {}).get("name") or entry.title
 
-    # Instrument-Typ (Optionen überschreiben data)
     instrument_type = entry.options.get(
         CONF_INSTRUMENT_TYPE,
         entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
     )
 
+    # Wie bei RalfEs73: monetary sensors nutzen "€" als Einheit
+    monetary_unit = "€"
+
     sensors: list[SensorEntity] = [
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "price", "Preis", SensorDeviceClass.MONETARY, "€", 3
+            coordinator, entry, instrument_type, "price", "Preis",
+            SensorDeviceClass.MONETARY, monetary_unit, 2
         ),
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "change_percent", "Änderung %", None, "%", 2
+            coordinator, entry, instrument_type, "change_percent", "Änderung %",
+            None, "%", 2
         ),
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "change_absolute", "Änderung", SensorDeviceClass.MONETARY, "€", 3
+            coordinator, entry, instrument_type, "change_absolute", "Änderung",
+            SensorDeviceClass.MONETARY, monetary_unit, 3
         ),
         INGStockLastUpdateSensor(coordinator, entry),
     ]
 
+    # Keyfigures only if available (some instruments return 404)
     if (coordinator.data or {}).get("keyfigures_available"):
         sensors.extend(
             [
                 INGStockValueSensor(
-                    coordinator, entry, instrument_type, "dividend_yield", "Dividendenrendite", None, "%", 4
+                    coordinator, entry, instrument_type, "dividend_yield", "Dividendenrendite",
+                    None, "%", 4
                 ),
                 INGStockValueSensor(
-                    coordinator, entry, instrument_type, "price_earnings_ratio", "KGV", None, None, 2
+                    coordinator, entry, instrument_type, "dividend_per_share", "Dividende je Anteil",
+                    SensorDeviceClass.MONETARY, monetary_unit, 3
                 ),
                 INGStockValueSensor(
-                    coordinator, entry, instrument_type, "market_capitalization", "Marktkapitalisierung", None, None, 0
+                    coordinator, entry, instrument_type, "price_earnings_ratio", "KGV",
+                    None, None, 2
                 ),
                 INGStockValueSensor(
-                    coordinator, entry, instrument_type, "52w_low", "52W Tief", SensorDeviceClass.MONETARY, "€", 3
+                    coordinator, entry, instrument_type, "market_capitalization", "Marktkapitalisierung",
+                    None, None, 0
                 ),
                 INGStockValueSensor(
-                    coordinator, entry, instrument_type, "52w_high", "52W Hoch", SensorDeviceClass.MONETARY, "€", 3
+                    coordinator, entry, instrument_type, "market_cap_currency", "Marktkap.-Währung",
+                    None, None, None
+                ),
+                INGStockValueSensor(
+                    coordinator, entry, instrument_type, "52w_low", "52W Tief",
+                    SensorDeviceClass.MONETARY, monetary_unit, 3
+                ),
+                INGStockValueSensor(
+                    coordinator, entry, instrument_type, "52w_high", "52W Hoch",
+                    SensorDeviceClass.MONETARY, monetary_unit, 3
                 ),
             ]
         )
@@ -157,29 +149,26 @@ class INGStockValueSensor(INGStockBaseSensor):
         super().__init__(coordinator, entry)
         self.instrument_type = instrument_type
         self.key = key
+        self._precision = precision
+
         self._attr_name = entity_name
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
-        self._precision = precision
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{key}"
 
-        # ✅ monetary darf nicht measurement sein (HA-Regel)
+        # Monetary must not be MEASUREMENT (HA rule)
         if device_class == SensorDeviceClass.MONETARY:
             self._attr_state_class = None
         else:
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{key}"
-
     @property
     def icon(self) -> str | None:
         d = self.coordinator.data or {}
-        name = d.get("name")
 
-        # Preis
         if self.key == "price":
             return "mdi:chart-line"
 
-        # Änderung dynamisch
         if self.key in ("change_percent", "change_absolute"):
             v = _safe_float(d.get(self.key))
             if v is None:
@@ -190,35 +179,47 @@ class INGStockValueSensor(INGStockBaseSensor):
                 return "mdi:trending-down"
             return "mdi:trending-neutral"
 
-        # Kennzahlen
         if self.key == "dividend_yield":
             return "mdi:cash-percent"
+        if self.key == "dividend_per_share":
+            return "mdi:cash"
         if self.key == "price_earnings_ratio":
             return "mdi:calculator-variant"
         if self.key == "market_capitalization":
             return "mdi:bank"
         if self.key in ("52w_low", "52w_high"):
             return "mdi:arrow-expand-vertical"
-        if self.key == "dividend_per_share":
-            return "mdi:cash"
 
-        # Fallback: ETF/Aktie je nach Auswahl/Auto-Erkennung
-        return _instrument_icon_for_type(self.instrument_type, d, name)
+        return "mdi:finance"
 
     @property
     def extra_state_attributes(self):
+        """
+        Vollständige Attributliste wie bei RalfEs73 (plus instrument_type_selected).
+        Dadurch siehst du am Sensor wieder alle Kennzahlen im Attribute-Block.
+        """
         d = self.coordinator.data or {}
         return {
+            # Basisdaten (Ralf)
+            "name": d.get("name"),
             "isin": d.get("isin"),
-            "exchange": d.get("exchange"),
             "currency": d.get("currency"),
+            "change_percent": d.get("change_percent"),
+            "change_absolute": d.get("change_absolute"),
+            "exchange": d.get("exchange"),
+            "last_update": d.get("last_update"),
+
+            # Keyfigures (Ralf)
+            "dividend_yield": d.get("dividend_yield"),
+            "dividend_per_share": d.get("dividend_per_share"),
+            "price_earnings_ratio": d.get("price_earnings_ratio"),
+            "market_capitalization": d.get("market_capitalization"),
+            "market_cap_currency": d.get("market_cap_currency"),
+            "52w_low": d.get("52w_low"),
+            "52w_high": d.get("52w_high"),
+
+            # Deine Option
             "instrument_type_selected": self.instrument_type,
-            # optional: API/Auto-Felder zur Diagnose
-            "instrument_type": d.get("instrument_type"),
-            "instrument_category": d.get("instrument_category"),
-            "instrument_group": d.get("instrument_group"),
-            "security_type": d.get("security_type"),
-            "asset_class": d.get("asset_class"),
         }
 
     @property
@@ -226,22 +227,36 @@ class INGStockValueSensor(INGStockBaseSensor):
         value = (self.coordinator.data or {}).get(self.key)
         if value is None:
             return None
-        if isinstance(value, (int, float)) and self._precision is not None:
-            return round(float(value), self._precision)
+
+        if self._precision is not None:
+            f = _safe_float(value)
+            if f is not None:
+                return round(f, self._precision)
+
         return value
 
 
 class INGStockLastUpdateSensor(INGStockBaseSensor):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_name = "Letztes Update"
+    _attr_icon = "mdi:clock-outline"
 
     def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_last_update"
 
     @property
-    def icon(self) -> str | None:
-        return "mdi:clock-outline"
+    def extra_state_attributes(self):
+        # Optional: auch am Timestamp-Sensor die komplette Attributliste anzeigen
+        d = self.coordinator.data or {}
+        return {
+            "name": d.get("name"),
+            "isin": d.get("isin"),
+            "currency": d.get("currency"),
+            "change_percent": d.get("change_percent"),
+            "change_absolute": d.get("change_absolute"),
+            "exchange": d.get("exchange"),
+        }
 
     @property
     def native_value(self):

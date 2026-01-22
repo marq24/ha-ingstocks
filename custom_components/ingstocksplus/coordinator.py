@@ -30,22 +30,27 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             f"https://component-api.wertpapiere.ing.de/api/v1/share-ng/keyfigures/{self.isin}"
         )
 
-        # IPv4 erzwingen (hilft bei DNS/Timeouts in manchen Setups)
+        # IPv4 force (helps in some HAOS DNS setups)
         session = async_get_clientsession(self.hass, family=socket.AF_INET)
 
         try:
-            # --- 1) instrumentheader
+            # 1) instrumentheader (Basisdaten) – wie RalfEs73
             async with session.get(header_url, timeout=20) as resp:
                 if resp.status != 200:
                     raise UpdateFailed(f"instrumentheader HTTP {resp.status}")
                 header = await resp.json()
 
-            # --- 2) keyfigures (optional)
+            price = header.get("price")
+            if price is None:
+                raise UpdateFailed(f"No price in instrumentheader for {self.isin}")
+
+            # 2) keyfigures (optional)
             keyfigures: dict[str, Any] = {}
             keyfigures_available = False
 
             async with session.get(keyfigures_url, timeout=20) as resp:
                 if resp.status == 404:
+                    # bei vielen Instrumenten (ETFs etc.) normal
                     _LOGGER.debug("No keyfigures for %s (HTTP 404).", self.isin)
                 elif resp.status != 200:
                     raise UpdateFailed(f"keyfigures HTTP {resp.status}")
@@ -58,28 +63,21 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             raise UpdateFailed(f"Fetch error {self.isin}: {err}") from err
 
+        # >>> 1:1 Attribute-Mapping wie in RalfEs73 sensor.py <<<
         data: dict[str, Any] = {
-            # Basis
             "name": header.get("name"),
             "isin": header.get("isin") or self.isin,
-            "currency": header.get("currencySign") or "€",
-            "exchange": header.get("exchangeName"),
-
-            # Kursdaten
-            "price": header.get("price"),
+            "currency": header.get("currencySign"),
             "change_percent": header.get("changePercent"),
             "change_absolute": header.get("changeAbsolute"),
+            "exchange": header.get("exchangeName"),
             "last_update": header.get("priceChangeDate"),
+            "price": price,
 
-            # 🧠 Typ-/Kategorie-Felder (falls ING sie liefert)
-            "instrument_type": header.get("instrumentType") or header.get("type"),
-            "instrument_category": header.get("instrumentCategory") or header.get("category"),
-            "instrument_group": header.get("instrumentGroup") or header.get("group"),
-            "security_type": header.get("securityType") or header.get("securityTypeName"),
-            "asset_class": header.get("assetClass") or header.get("assetClassName"),
+            # keyfigures meta
+            "keyfigures_available": bool(keyfigures_available),
 
-            # Keyfigures
-            "keyfigures_available": keyfigures_available,
+            # keyfigures – wie RalfEs73
             "dividend_yield": keyfigures.get("dividendYield"),
             "dividend_per_share": keyfigures.get("dividendPerShare"),
             "price_earnings_ratio": keyfigures.get("priceEarningsRatio"),
@@ -88,8 +86,5 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "52w_low": keyfigures.get("fiftyTwoWeekLow"),
             "52w_high": keyfigures.get("fiftyTwoWeekHigh"),
         }
-
-        if data["price"] is None:
-            raise UpdateFailed(f"No price in instrumentheader for {self.isin}")
 
         return data
