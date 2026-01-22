@@ -1,4 +1,3 @@
-# sensor.py
 from __future__ import annotations
 
 import logging
@@ -34,7 +33,6 @@ def _safe_float(v):
 
 
 def _get_quantity(entry: ConfigEntry) -> float:
-    """Quantity from options (preferred), then data."""
     q = entry.options.get(CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY))
     try:
         qf = float(q)
@@ -50,7 +48,6 @@ async def async_setup_entry(
 ) -> None:
     coordinator: INGStocksCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Display name (options override entry data)
     custom_name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME))
     if custom_name:
         coordinator.display_name = custom_name
@@ -62,73 +59,118 @@ async def async_setup_entry(
         entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
     )
 
-    quantity = _get_quantity(entry)
-
-    # Wie bei RalfEs73: monetary sensors nutzen "€" als Einheit
     monetary_unit = "€"
 
+    # Preis & Änderungen IMMER anlegen (unabhängig von Keyfigures)
     sensors: list[SensorEntity] = [
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "price", "Preis",
-            SensorDeviceClass.MONETARY, monetary_unit, 2
+            coordinator, entry, instrument_type,
+            key="price",
+            entity_name="Preis",
+            unique_suffix="price",
+            device_class=SensorDeviceClass.MONETARY,
+            unit=monetary_unit,
+            precision=2,
         ),
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "change_percent", "Änderung %",
-            None, "%", 2
+            coordinator, entry, instrument_type,
+            key="change_percent",
+            entity_name="Änderung %",
+            unique_suffix="change_percent",
+            device_class=None,
+            unit="%",
+            precision=2,
         ),
         INGStockValueSensor(
-            coordinator, entry, instrument_type, "change_absolute", "Änderung",
-            SensorDeviceClass.MONETARY, monetary_unit, 3
+            coordinator, entry, instrument_type,
+            key="change_absolute",
+            entity_name="Änderung",
+            unique_suffix="change_absolute",
+            device_class=SensorDeviceClass.MONETARY,
+            unit=monetary_unit,
+            precision=3,
         ),
         INGStockLastUpdateSensor(coordinator, entry),
     ]
 
-    # NEU: Positionswert-Sensor nur wenn quantity > 0
-    if quantity > 0:
+    # Positionswert nur bei quantity > 0
+    if _get_quantity(entry) > 0:
         sensors.append(
             INGStockPositionValueSensor(
                 coordinator=coordinator,
                 entry=entry,
                 instrument_type=instrument_type,
-                quantity=quantity,
                 unit=monetary_unit,
             )
         )
 
-    # Keyfigures only if available (some instruments return 404)
-    if (coordinator.data or {}).get("keyfigures_available"):
-        sensors.extend(
-            [
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "dividend_yield", "Dividendenrendite",
-                    None, "%", 4
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "dividend_per_share", "Dividende je Anteil",
-                    SensorDeviceClass.MONETARY, monetary_unit, 3
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "price_earnings_ratio", "KGV",
-                    None, None, 2
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "market_capitalization", "Marktkapitalisierung",
-                    None, None, 0
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "market_cap_currency", "Marktkap.-Währung",
-                    None, None, None
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "52w_low", "52W Tief",
-                    SensorDeviceClass.MONETARY, monetary_unit, 3
-                ),
-                INGStockValueSensor(
-                    coordinator, entry, instrument_type, "52w_high", "52W Hoch",
-                    SensorDeviceClass.MONETARY, monetary_unit, 3
-                ),
-            ]
-        )
+    # Keyfigures-Sensoren: IMMER anlegen, aber werden None wenn API nichts liefert.
+    # Dadurch verschwinden Entities nicht mehr aus der Registry.
+    sensors.extend(
+        [
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="dividend_yield",
+                entity_name="Dividendenrendite",
+                unique_suffix="dividend_yield",
+                device_class=None,
+                unit="%",
+                precision=4,
+            ),
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="dividend_per_share",
+                entity_name="Dividende je Anteil",
+                unique_suffix="dividend_per_share",
+                device_class=SensorDeviceClass.MONETARY,
+                unit=monetary_unit,
+                precision=3,
+            ),
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="price_earnings_ratio",
+                entity_name="KGV",
+                unique_suffix="price_earnings_ratio",
+                device_class=None,
+                unit=None,
+                precision=2,
+            ),
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="market_capitalization",
+                entity_name="Marktkapitalisierung",
+                unique_suffix="market_capitalization",
+                device_class=None,
+                unit=None,
+                precision=0,
+            ),
+            # Market cap currency als "Wert" (Text), bleibt aber Entity-stabil
+            INGStockTextSensor(
+                coordinator, entry, instrument_type,
+                key="market_cap_currency",
+                entity_name="Marktkap.-Währung",
+                unique_suffix="market_cap_currency",
+            ),
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="52w_low",
+                entity_name="52W Tief",
+                unique_suffix="52w_low",
+                device_class=SensorDeviceClass.MONETARY,
+                unit=monetary_unit,
+                precision=3,
+            ),
+            INGStockValueSensor(
+                coordinator, entry, instrument_type,
+                key="52w_high",
+                entity_name="52W Hoch",
+                unique_suffix="52w_high",
+                device_class=SensorDeviceClass.MONETARY,
+                unit=monetary_unit,
+                precision=3,
+            ),
+        ]
+    )
 
     async_add_entities(sensors, True)
 
@@ -142,6 +184,7 @@ class INGStockBaseSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
+        # Bei fehlenden Keyfigures sollen Entities trotzdem existieren, aber eben None als value haben.
         return self.coordinator.last_update_success and (self.coordinator.data or {}).get("price") is not None
 
     @property
@@ -169,6 +212,7 @@ class INGStockValueSensor(INGStockBaseSensor):
         instrument_type: str,
         key: str,
         entity_name: str,
+        unique_suffix: str,
         device_class: SensorDeviceClass | None,
         unit: str | None,
         precision: int | None,
@@ -181,9 +225,10 @@ class INGStockValueSensor(INGStockBaseSensor):
         self._attr_name = entity_name
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{key}"
 
-        # Monetary must not be MEASUREMENT (HA rule)
+        # 🔒 Stabiler Unique-ID-Suffix (ändert sich nicht, auch wenn entity_name übersetzt/umbenannt wird)
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{unique_suffix}"
+
         if device_class == SensorDeviceClass.MONETARY:
             self._attr_state_class = None
         else:
@@ -221,14 +266,10 @@ class INGStockValueSensor(INGStockBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        """
-        Vollständige Attributliste wie bei RalfEs73 (plus instrument_type_selected + quantity).
-        """
         d = self.coordinator.data or {}
         quantity = _get_quantity(self.entry)
 
         return {
-            # Basisdaten (Ralf)
             "name": d.get("name"),
             "isin": d.get("isin"),
             "currency": d.get("currency"),
@@ -237,7 +278,6 @@ class INGStockValueSensor(INGStockBaseSensor):
             "exchange": d.get("exchange"),
             "last_update": d.get("last_update"),
 
-            # Keyfigures (Ralf)
             "dividend_yield": d.get("dividend_yield"),
             "dividend_per_share": d.get("dividend_per_share"),
             "price_earnings_ratio": d.get("price_earnings_ratio"),
@@ -246,7 +286,6 @@ class INGStockValueSensor(INGStockBaseSensor):
             "52w_low": d.get("52w_low"),
             "52w_high": d.get("52w_high"),
 
-            # Deine Option
             "instrument_type_selected": self.instrument_type,
             "quantity": quantity,
         }
@@ -265,24 +304,65 @@ class INGStockValueSensor(INGStockBaseSensor):
         return value
 
 
-class INGStockPositionValueSensor(INGStockBaseSensor):
-    """NEU: Positionswert (price * quantity)."""
+class INGStockTextSensor(INGStockBaseSensor):
+    """Text sensor for values like market_cap_currency to keep entity stable."""
+
+    _attr_device_class = None
+    _attr_state_class = None
 
     def __init__(
         self,
         coordinator: INGStocksCoordinator,
         entry: ConfigEntry,
         instrument_type: str,
-        quantity: float,
+        key: str,
+        entity_name: str,
+        unique_suffix: str,
+    ):
+        super().__init__(coordinator, entry)
+        self.instrument_type = instrument_type
+        self.key = key
+        self._attr_name = entity_name
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{unique_suffix}"
+
+    @property
+    def icon(self) -> str | None:
+        return "mdi:currency-sign"
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data or {}
+        return {
+            "name": d.get("name"),
+            "isin": d.get("isin"),
+            "exchange": d.get("exchange"),
+            "currency": d.get("currency"),
+            "last_update": d.get("last_update"),
+            "instrument_type_selected": self.instrument_type,
+        }
+
+    @property
+    def native_value(self):
+        v = (self.coordinator.data or {}).get(self.key)
+        return str(v) if v is not None else None
+
+
+class INGStockPositionValueSensor(INGStockBaseSensor):
+    """Positionswert (price * quantity)."""
+
+    def __init__(
+        self,
+        coordinator: INGStocksCoordinator,
+        entry: ConfigEntry,
+        instrument_type: str,
         unit: str,
     ):
         super().__init__(coordinator, entry)
         self.instrument_type = instrument_type
-        self.quantity = float(quantity)
         self._attr_name = "Positionswert"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_native_unit_of_measurement = unit
-        self._attr_state_class = None  # monetary -> no MEASUREMENT
+        self._attr_state_class = None
         self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_position_value"
 
     @property
@@ -308,11 +388,8 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
         d = self.coordinator.data or {}
         price = _safe_float(d.get("price"))
         quantity = _get_quantity(self.entry)
-
         if price is None or quantity <= 0:
             return None
-
-        # 2 decimals (money)
         return round(price * quantity, 2)
 
 
