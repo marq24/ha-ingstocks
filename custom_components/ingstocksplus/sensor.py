@@ -1,3 +1,4 @@
+# sensor.py
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,8 @@ from .const import (
     DOMAIN,
     CONF_NAME,
     CONF_INSTRUMENT_TYPE,
+    CONF_QUANTITY,
+    DEFAULT_QUANTITY,
     INSTRUMENT_TYPE_AUTO,
 )
 from .coordinator import INGStocksCoordinator
@@ -28,6 +31,16 @@ def _safe_float(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _get_quantity(entry: ConfigEntry) -> float:
+    """Quantity from options (preferred), then data."""
+    q = entry.options.get(CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY))
+    try:
+        qf = float(q)
+        return qf if qf >= 0 else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 async def async_setup_entry(
@@ -49,6 +62,8 @@ async def async_setup_entry(
         entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
     )
 
+    quantity = _get_quantity(entry)
+
     # Wie bei RalfEs73: monetary sensors nutzen "€" als Einheit
     monetary_unit = "€"
 
@@ -67,6 +82,18 @@ async def async_setup_entry(
         ),
         INGStockLastUpdateSensor(coordinator, entry),
     ]
+
+    # NEU: Positionswert-Sensor nur wenn quantity > 0
+    if quantity > 0:
+        sensors.append(
+            INGStockPositionValueSensor(
+                coordinator=coordinator,
+                entry=entry,
+                instrument_type=instrument_type,
+                quantity=quantity,
+                unit=monetary_unit,
+            )
+        )
 
     # Keyfigures only if available (some instruments return 404)
     if (coordinator.data or {}).get("keyfigures_available"):
@@ -195,10 +222,11 @@ class INGStockValueSensor(INGStockBaseSensor):
     @property
     def extra_state_attributes(self):
         """
-        Vollständige Attributliste wie bei RalfEs73 (plus instrument_type_selected).
-        Dadurch siehst du am Sensor wieder alle Kennzahlen im Attribute-Block.
+        Vollständige Attributliste wie bei RalfEs73 (plus instrument_type_selected + quantity).
         """
         d = self.coordinator.data or {}
+        quantity = _get_quantity(self.entry)
+
         return {
             # Basisdaten (Ralf)
             "name": d.get("name"),
@@ -220,6 +248,7 @@ class INGStockValueSensor(INGStockBaseSensor):
 
             # Deine Option
             "instrument_type_selected": self.instrument_type,
+            "quantity": quantity,
         }
 
     @property
@@ -236,6 +265,57 @@ class INGStockValueSensor(INGStockBaseSensor):
         return value
 
 
+class INGStockPositionValueSensor(INGStockBaseSensor):
+    """NEU: Positionswert (price * quantity)."""
+
+    def __init__(
+        self,
+        coordinator: INGStocksCoordinator,
+        entry: ConfigEntry,
+        instrument_type: str,
+        quantity: float,
+        unit: str,
+    ):
+        super().__init__(coordinator, entry)
+        self.instrument_type = instrument_type
+        self.quantity = float(quantity)
+        self._attr_name = "Positionswert"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = unit
+        self._attr_state_class = None  # monetary -> no MEASUREMENT
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_position_value"
+
+    @property
+    def icon(self) -> str | None:
+        return "mdi:briefcase"
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data or {}
+        return {
+            "name": d.get("name"),
+            "isin": d.get("isin"),
+            "exchange": d.get("exchange"),
+            "currency": d.get("currency"),
+            "last_update": d.get("last_update"),
+            "instrument_type_selected": self.instrument_type,
+            "quantity": _get_quantity(self.entry),
+            "unit_price": d.get("price"),
+        }
+
+    @property
+    def native_value(self):
+        d = self.coordinator.data or {}
+        price = _safe_float(d.get("price"))
+        quantity = _get_quantity(self.entry)
+
+        if price is None or quantity <= 0:
+            return None
+
+        # 2 decimals (money)
+        return round(price * quantity, 2)
+
+
 class INGStockLastUpdateSensor(INGStockBaseSensor):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_name = "Letztes Update"
@@ -244,19 +324,6 @@ class INGStockLastUpdateSensor(INGStockBaseSensor):
     def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_last_update"
-
-    @property
-    def extra_state_attributes(self):
-        # Optional: auch am Timestamp-Sensor die komplette Attributliste anzeigen
-        d = self.coordinator.data or {}
-        return {
-            "name": d.get("name"),
-            "isin": d.get("isin"),
-            "currency": d.get("currency"),
-            "change_percent": d.get("change_percent"),
-            "change_absolute": d.get("change_absolute"),
-            "exchange": d.get("exchange"),
-        }
 
     @property
     def native_value(self):
