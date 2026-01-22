@@ -141,3 +141,14 @@ series:
 Please report issues or ideas via GitHub:
 
 👉 https://github.com/Sundancer78/hacs_ingstocksplus/issues
+
+
+## Changelog
+
+### 1.2.0
+- Added quantity option (float)
+- Added calculated position value sensor
+
+### 1.1.1
+- Bugfix: attribute handling aligned with original ING Stocks integration
+
