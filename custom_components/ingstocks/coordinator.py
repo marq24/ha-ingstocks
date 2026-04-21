@@ -4,6 +4,7 @@ import logging
 import socket
 import asyncio
 import random
+import zoneinfo
 
 from typing import Any
 
@@ -12,18 +13,23 @@ from aiohttp import ClientTimeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+
+# German stock exchange timezone (Xetra/Frankfurt: Europe/Berlin)
+_EXCHANGE_TZ = zoneinfo.ZoneInfo("Europe/Berlin")
 
 
 class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, update_interval):
         self.session = async_get_clientsession(hass, family=socket.AF_INET)
         self.isin_list = []
+        self._force_next_update = True  # always fetch on (re)start
         super().__init__(
             hass,
             _LOGGER,
-            name=f"ING Stocks [MULTI]",
+            name=f"ING Stocks DataUpdateCoordinator",
             update_interval=update_interval,
         )
 
@@ -41,6 +47,26 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return len(self.isin_list) == 0
 
     async def _async_update_data(self) -> dict[str, Any]:
+        # Quiet hours based on German exchange time (Europe/Berlin):
+        # Trading: Mon–Fri 07:20–22:05 CET/CEST, closed all Saturday & Sunday
+        exchange_now = dt_util.utcnow().astimezone(_EXCHANGE_TZ)
+        is_quiet = (
+            exchange_now.weekday() >= 5  # 5=Saturday, 6=Sunday
+            or exchange_now.hour > 22
+            or (exchange_now.hour == 22 and exchange_now.minute >= 5)
+            or exchange_now.hour < 7
+            or (exchange_now.hour == 7 and exchange_now.minute < 20)
+        )
+
+        if is_quiet and not self._force_next_update:
+            _LOGGER.debug(
+                "Skipping update – exchange closed (Berlin time: %s, weekday=%s)",
+                exchange_now.strftime("%H:%M"), exchange_now.weekday(),
+            )
+            return self.data or {}
+
+        self._force_next_update = False
+
         data: dict[str, Any] = {}
         errors: list[str] = []
         timeout = ClientTimeout(total=20)
