@@ -1,6 +1,6 @@
-# ING Stocks Plus
+# ING Stocks
 
-**ING Stocks Plus** is a custom Home Assistant integration to fetch **stock and ETF data by ISIN**
+**ING Stocks** is a custom Home Assistant integration to fetch **stock and ETF data by ISIN**
 using ING’s public instrument API.
 
 The integration is inspired by the original *ING Stocks* integration by **RalfEs73**,
@@ -38,9 +38,9 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
 3. Click **⋮ → Custom repositories**
 4. Add:
    - **Repository:**  
-     `https://github.com/Sundancer78/hacs_ingstocksplus`
+     `https://github.com/marq24/ha-ingstocks`
    - **Type:** Integration
-5. Install **ING Stocks Plus**
+5. Install **ING Stocks**
 6. **Restart Home Assistant**
 
 ---
@@ -49,7 +49,7 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
 
 1. Go to **Settings → Devices & Services**
 2. Click **Add Integration**
-3. Search for **ING Stocks Plus**
+3. Search for **ING Stocks**
 4. Enter:
    - **ISIN** (required)
    - **Name** (optional)
@@ -140,7 +140,7 @@ series:
 
 Please report issues or ideas via GitHub:
 
-👉 https://github.com/Sundancer78/hacs_ingstocksplus/issues
+👉 https://github.com/marq24/ha-ingstocks/issues
 
 
 ## Changelog

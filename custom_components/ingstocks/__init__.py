@@ -50,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(str(err)) from err
 
     _LOGGER.info(
-        "ING Stocks Plus setup: ISINs=%s, scan_interval=%s min",
+        "ING Stocks setup: ISINs=%s, scan_interval=%s min",
         isins,
         scan_interval_min,
     )
