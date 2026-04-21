@@ -10,6 +10,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -18,7 +19,7 @@ from .const import (
     CONF_INSTRUMENT_TYPE,
     CONF_QUANTITY,
     DEFAULT_QUANTITY,
-    INSTRUMENT_TYPE_AUTO,
+    INSTRUMENT_TYPE_AUTO, COORDINATOR_KEY,
 )
 from .coordinator import INGStocksCoordinator
 
@@ -46,7 +47,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: INGStocksCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: INGStocksCoordinator = hass.data[DOMAIN][COORDINATOR_KEY]
+    isin = hass.data[DOMAIN][entry.entry_id]
 
     custom_name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME))
     if custom_name:
@@ -172,36 +174,35 @@ async def async_setup_entry(
         ]
     )
 
-    async_add_entities(sensors, True)
+    async_add_entities(sensors, False)
 
 
-class INGStockBaseSensor(SensorEntity):
+class INGStockBaseSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry):
+        super().__init__(coordinator)
         self.coordinator = coordinator
         self.entry = entry
+        self.isin = entry.data.get("isin", None)
 
     @property
     def available(self) -> bool:
         # Bei fehlenden Keyfigures sollen Entities trotzdem existieren, aber eben None als value haben.
-        return self.coordinator.last_update_success and (self.coordinator.data or {}).get("price") is not None
+        return self.coordinator.last_update_success and self.coordinator.data.get(self.isin, {}).get("price") is not None
 
     @property
     def device_info(self):
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
         return {
-            "identifiers": {(DOMAIN, self.coordinator.isin)},
+            "identifiers": {(DOMAIN, self.isin)},
             "name": self.coordinator.display_name or d.get("name") or self.entry.title,
             "manufacturer": "ING (component-api.wertpapiere.ing.de)",
-            "model": self.coordinator.isin,
+            "model": self.isin,
         }
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
-
-    async def async_update(self) -> None:
-        await self.coordinator.async_request_refresh()
 
 
 class INGStockValueSensor(INGStockBaseSensor):
@@ -227,7 +228,7 @@ class INGStockValueSensor(INGStockBaseSensor):
         self._attr_native_unit_of_measurement = unit
 
         # 🔒 Stabiler Unique-ID-Suffix (ändert sich nicht, auch wenn entity_name übersetzt/umbenannt wird)
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{unique_suffix}"
+        self._attr_unique_id = f"{DOMAIN}_{self.isin}_{unique_suffix}"
 
         if device_class == SensorDeviceClass.MONETARY:
             self._attr_state_class = None
@@ -236,7 +237,7 @@ class INGStockValueSensor(INGStockBaseSensor):
 
     @property
     def icon(self) -> str | None:
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
 
         if self.key == "price":
             return "mdi:chart-line"
@@ -266,7 +267,7 @@ class INGStockValueSensor(INGStockBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
         quantity = _get_quantity(self.entry)
 
         return {
@@ -292,7 +293,7 @@ class INGStockValueSensor(INGStockBaseSensor):
 
     @property
     def native_value(self):
-        value = (self.coordinator.data or {}).get(self.key)
+        value = self.coordinator.data.get(self.isin, {}).get(self.key)
         if value is None:
             return None
 
@@ -323,7 +324,7 @@ class INGStockTextSensor(INGStockBaseSensor):
         self.instrument_type = instrument_type
         self.key = key
         self._attr_name = entity_name
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_{unique_suffix}"
+        self._attr_unique_id = f"{DOMAIN}_{self.isin}_{unique_suffix}"
 
     @property
     def icon(self) -> str | None:
@@ -331,7 +332,7 @@ class INGStockTextSensor(INGStockBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
         return {
             "name": d.get("name"),
             "isin": d.get("isin"),
@@ -343,7 +344,7 @@ class INGStockTextSensor(INGStockBaseSensor):
 
     @property
     def native_value(self):
-        v = (self.coordinator.data or {}).get(self.key)
+        v = self.coordinator.data.get(self.isin, {}).get(self.key)
         return str(v) if v is not None else None
 
 
@@ -363,7 +364,7 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = None
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_position_value"
+        self._attr_unique_id = f"{DOMAIN}_{self.isin}_position_value"
 
     @property
     def icon(self) -> str | None:
@@ -371,7 +372,7 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
         return {
             "name": d.get("name"),
             "isin": d.get("isin"),
@@ -385,7 +386,7 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
 
     @property
     def native_value(self):
-        d = self.coordinator.data or {}
+        d = self.coordinator.data.get(self.isin, {})
         price = _safe_float(d.get("price"))
         quantity = _get_quantity(self.entry)
         if price is None or quantity <= 0:
@@ -400,11 +401,11 @@ class INGStockLastUpdateSensor(INGStockBaseSensor):
 
     def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{DOMAIN}_{coordinator.isin}_last_update"
+        self._attr_unique_id = f"{DOMAIN}_{self.isin}_last_update"
 
     @property
     def native_value(self):
-        raw = (self.coordinator.data or {}).get("last_update")
+        raw = self.coordinator.data.get(self.isin, {}).get("last_update")
         if not raw:
             return None
         dt = dt_util.parse_datetime(raw)

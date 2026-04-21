@@ -15,6 +15,7 @@ venv/
 # Editors / IDEs
 .vscode/
 .idea/
+*.iml
 
 # OS
 .DS_Store

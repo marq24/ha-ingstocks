@@ -1,6 +1,6 @@
 {
-  "name": "ING Stocks Plus",
-  "domain": "ingstocksplus",
+  "name": "ING Stocks",
+  "domain": "ingstocks",
   "iot_class": "cloud_polling",
   "content_in_root": false,
   "render_readme": true,

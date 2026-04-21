@@ -1,5 +1,8 @@
 # const.py
-DOMAIN = "ingstocksplus"
+DOMAIN = "ingstocks"
+
+COORDINATOR_KEY = "multi_coordinator"
+DELAYED_TASK_KEY = "delayed_task"
 
 CONF_ISIN = "isin"
 CONF_NAME = "name"
