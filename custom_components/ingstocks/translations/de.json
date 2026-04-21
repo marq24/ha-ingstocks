@@ -9,34 +9,38 @@
           "name": "Name (optional)",
           "scan_interval": "Update-Intervall (Minuten)",
           "instrument_type": "Instrument-Typ",
-          "quantity": "Quantity (shares/units)"
+          "quantity": "Stückzahl (Anteile)"
         }
       },
       "select_isin": {
-        "title": "Manage ISINs",
-        "description": "Select an ISIN to edit or add a new one.",
+        "title": "ISINs verwalten",
+        "description": "Wähle eine ISIN zum Bearbeiten oder füge eine neue hinzu.",
         "data": {
           "selected_isin": "ISIN",
-          "scan_interval": "Update interval (minutes)"
+          "scan_interval": "Update-Intervall (Minuten)"
+        },
+        "actions": {
+          "add_new": "➕ Neue ISIN hinzufügen",
+          "save_close": "💾 Nur 'Update-Intervall' aktualisieren & schließen"
         }
       },
       "add_isin": {
         "title": "ISIN Hinzufügen",
-        "description": "Enter a new ISIN to track.",
+        "description": "Neue ISIN zum Tracken eingeben.",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "instrument_type": "Instrument-Typ",
-          "quantity": "Quantity (shares/units)"
+          "quantity": "Stückzahl (Anteile)"
         }
       },
       "edit_isin": {
-        "title": "ISIN Bearabeiten",
-        "description": "Editing settings for ISIN: **{isin}**",
+        "title": "ISIN Bearbeiten",
+        "description": "Einstellungen für ISIN bearbeiten: **{isin}**",
         "data": {
           "name": "Name (optional)",
           "instrument_type": "Instrument-Typ",
-          "quantity": "Quantity (shares/units)"
+          "quantity": "Stückzahl (Anteile)"
         }
       }
     },
@@ -44,7 +48,7 @@
       "isin_already_configured": "Diese ISIN ist bereits konfiguriert."
     },
     "abort": {
-      "reconfigured": "Configuration updated successfully."
+      "reconfigured": "Konfiguration erfolgreich aktualisiert."
     }
   },
   "selector": {
