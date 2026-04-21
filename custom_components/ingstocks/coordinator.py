@@ -26,6 +26,7 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.session = async_get_clientsession(hass, family=socket.AF_INET)
         self.isin_list = []
         self._force_next_update = True  # always fetch on (re)start
+        self._update_lock = asyncio.Lock()
         super().__init__(
             hass,
             _LOGGER,
@@ -47,6 +48,14 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return len(self.isin_list) == 0
 
     async def _async_update_data(self) -> dict[str, Any]:
+        if self._update_lock.locked():
+            _LOGGER.debug("Update already in progress – skipping this cycle")
+            return self.data or {}
+
+        async with self._update_lock:
+            return await self._do_update()
+
+    async def _do_update(self) -> dict[str, Any]:
         # Quiet hours based on German exchange time (Europe/Berlin):
         # Trading: Mon–Fri 07:20–22:05 CET/CEST, closed all Saturday & Sunday
         exchange_now = dt_util.utcnow().astimezone(_EXCHANGE_TZ)
