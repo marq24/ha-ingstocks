@@ -2,15 +2,49 @@
   "config": {
     "step": {
       "user": {
-        "title": "ING Stocks Plus",
-        "description": "Füge eine ISIN hinzu**{isin}**, um Kursdaten und optionale Kennzahlen zu erhalten.",
+        "title": "ING Stocks",
+        "description": "Füge eine ISIN hinzu, um Kursdaten und optionale Kennzahlen zu erhalten.",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "scan_interval": "Update-Intervall (Minuten)",
-          "instrument_type": "Instrument-Typ"
+          "instrument_type": "Instrument-Typ",
+          "quantity": "Quantity (shares/units)"
+        }
+      },
+      "select_isin": {
+        "title": "Manage ISINs",
+        "description": "Select an ISIN to edit or add a new one.",
+        "data": {
+          "selected_isin": "ISIN",
+          "scan_interval": "Update interval (minutes)"
+        }
+      },
+      "add_isin": {
+        "title": "ISIN Hinzufügen",
+        "description": "Enter a new ISIN to track.",
+        "data": {
+          "isin": "ISIN",
+          "name": "Name (optional)",
+          "instrument_type": "Instrument-Typ",
+          "quantity": "Quantity (shares/units)"
+        }
+      },
+      "edit_isin": {
+        "title": "ISIN Bearabeiten",
+        "description": "Editing settings for ISIN: **{isin}**",
+        "data": {
+          "name": "Name (optional)",
+          "instrument_type": "Instrument-Typ",
+          "quantity": "Quantity (shares/units)"
         }
       }
+    },
+    "error": {
+      "isin_already_configured": "Diese ISIN ist bereits konfiguriert."
+    },
+    "abort": {
+      "reconfigured": "Configuration updated successfully."
     }
   },
   "selector": {

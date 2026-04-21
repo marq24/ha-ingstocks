@@ -16,7 +16,6 @@ _LOGGER = logging.getLogger(__name__)
 
 class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, update_interval):
-        self.display_name: str | None = None
         self.session = async_get_clientsession(hass, family=socket.AF_INET)
         self.isin_list = []
         super().__init__(
