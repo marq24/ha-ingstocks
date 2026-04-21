@@ -3,21 +3,9 @@
     "step": {
       "user": {
         "title": "ING Stocks Plus",
-        "description": "Füge eine ISIN hinzu, um Kursdaten und optionale Kennzahlen zu erhalten.",
+        "description": "Füge eine ISIN hinzu**{isin}**, um Kursdaten und optionale Kennzahlen zu erhalten.",
         "data": {
           "isin": "ISIN",
-          "name": "Name (optional)",
-          "scan_interval": "Update-Intervall (Minuten)",
-          "instrument_type": "Instrument-Typ"
-        }
-      }
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Optionen",
-        "data": {
           "name": "Name (optional)",
           "scan_interval": "Update-Intervall (Minuten)",
           "instrument_type": "Instrument-Typ"

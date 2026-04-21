@@ -18,113 +18,73 @@ from .const import (
     INSTRUMENT_TYPE_AUTO,
 )
 
+from homeassistant.config_entries import ConfigFlowResult, SOURCE_RECONFIGURE
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
-        if user_input is None:
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_ISIN): str,
-                    vol.Optional(CONF_NAME): str,
-                    vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-                        int, vol.Range(min=1, max=360)
-                    ),
-                    vol.Required(CONF_INSTRUMENT_TYPE, default=INSTRUMENT_TYPE_AUTO): vol.In(
-                        INSTRUMENT_TYPE_OPTIONS
-                    ),
-                    # NEU: Stückzahl
-                    vol.Optional(CONF_QUANTITY, default=DEFAULT_QUANTITY): vol.All(
-                        vol.Coerce(float), vol.Range(min=0)
-                    ),
-                }
-            )
-            return self.async_show_form(step_id="user", data_schema=schema)
+    def __init__(self):
+        self._default_isin = ""
+        self._default_name = ""
+        self._default_scan_interval = DEFAULT_SCAN_INTERVAL
+        self._default_instrument_type = INSTRUMENT_TYPE_AUTO
+        self._default_quantity = DEFAULT_QUANTITY
 
-        isin = user_input[CONF_ISIN].strip().upper()
+    async def async_step_reconfigure(self, user_input: dict | None = None) -> ConfigFlowResult:
+        entry_data = self._get_reconfigure_entry().data
+        self._default_isin = entry_data.get(CONF_ISIN, "")
+        self._default_name = entry_data.get(CONF_NAME, "")
+        self._default_scan_interval = entry_data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        self._default_instrument_type = entry_data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
+        self._default_quantity = entry_data.get(CONF_QUANTITY, DEFAULT_QUANTITY)
+        return await self.async_step_user()
+
+    async def async_step_user(self, user_input=None) -> ConfigFlowResult:
+        is_reconfigure = self.source == SOURCE_RECONFIGURE
+        if user_input is None:
+            isin = getattr(self, '_default_isin', "")
+            name = getattr(self, '_default_name', "")
+            scan_interval = getattr(self, '_default_scan_interval', DEFAULT_SCAN_INTERVAL)
+            instrument_type = getattr(self, '_default_instrument_type', INSTRUMENT_TYPE_AUTO)
+            quantity = getattr(self, '_default_quantity', DEFAULT_QUANTITY)
+
+            fields = {}
+            if not is_reconfigure:
+                fields[vol.Required(CONF_ISIN, default=isin)] = str
+            fields[vol.Optional(CONF_NAME, default=name)] = str
+            fields[vol.Required(CONF_SCAN_INTERVAL, default=scan_interval)] = vol.All(int, vol.Range(min=1, max=360))
+            fields[vol.Required(CONF_INSTRUMENT_TYPE, default=instrument_type)] = vol.In(INSTRUMENT_TYPE_OPTIONS)
+            fields[vol.Optional(CONF_QUANTITY, default=quantity)] = vol.All(vol.Coerce(float), vol.Range(min=0))
+
+            return self.async_show_form(
+                step_id="user",
+                data_schema=vol.Schema(fields),
+                description_placeholders={CONF_ISIN: f" {getattr(self, '_default_isin', "")}"} if is_reconfigure else {CONF_ISIN: ""},
+            )
+
+        # On reconfigure, ISIN is not in user_input – reuse stored value
+        isin = (self._default_isin if is_reconfigure else user_input[CONF_ISIN]).strip().upper()
         name = (user_input.get(CONF_NAME) or "").strip()
         scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         instrument_type = user_input.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
         quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
+        title = name if name else f"ING {isin}"
+
+        data = {
+            CONF_ISIN: isin,
+            CONF_NAME: name,
+            CONF_SCAN_INTERVAL: scan_interval,
+            CONF_INSTRUMENT_TYPE: instrument_type,
+            CONF_QUANTITY: quantity,
+        }
+
+        if self.source == SOURCE_RECONFIGURE:
+            return self.async_update_reload_and_abort(
+                entry=self._get_reconfigure_entry(),
+                data=data,
+                title=title,
+            )
 
         await self.async_set_unique_id(f"{DOMAIN}_{isin}")
         self._abort_if_unique_id_configured()
-
-        title = name if name else f"ING {isin}"
-
-        return self.async_create_entry(
-            title=title,
-            data={
-                CONF_ISIN: isin,
-                CONF_NAME: name,
-                CONF_SCAN_INTERVAL: scan_interval,
-                CONF_INSTRUMENT_TYPE: instrument_type,
-                # NEU: Stückzahl auch initial speichern
-                CONF_QUANTITY: quantity,
-            },
-        )
-
-    @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-        return OptionsFlowHandler(config_entry)
-
-
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Options flow for changing name, scan interval, instrument type, and quantity."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
-
-    async def async_step_init(self, user_input=None) -> FlowResult:
-        entry = self._config_entry
-
-        current_interval = int(
-            entry.options.get(CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-        )
-
-        current_name = entry.options.get(CONF_NAME)
-        if current_name is None:
-            current_name = entry.data.get(CONF_NAME, "")
-        current_name = str(current_name)
-
-        current_type = entry.options.get(
-            CONF_INSTRUMENT_TYPE,
-            entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
-        )
-
-        current_quantity = float(
-            entry.options.get(CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY))
-        )
-
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_NAME, default=current_name): str,
-                vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
-                    int, vol.Range(min=1, max=360)
-                ),
-                vol.Required(CONF_INSTRUMENT_TYPE, default=current_type): vol.In(INSTRUMENT_TYPE_OPTIONS),
-                # NEU
-                vol.Optional(CONF_QUANTITY, default=current_quantity): vol.All(
-                    vol.Coerce(float), vol.Range(min=0)
-                ),
-            }
-        )
-
-        if user_input is None:
-            return self.async_show_form(step_id="init", data_schema=schema)
-
-        name = (user_input.get(CONF_NAME) or "").strip()
-        scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-        instrument_type = user_input.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
-        quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
-
-        return self.async_create_entry(
-            title="",
-            data={
-                CONF_NAME: name,
-                CONF_SCAN_INTERVAL: scan_interval,
-                CONF_INSTRUMENT_TYPE: instrument_type,
-                CONF_QUANTITY: quantity,
-            },
-        )
+        return self.async_create_entry(title=title, data=data)
