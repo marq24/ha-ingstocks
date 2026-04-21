@@ -66,17 +66,17 @@ async def async_setup_entry(
         sensors.extend([
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="price", entity_name="Preis", unique_suffix="price",
+                key="price", unique_suffix="price",
                 device_class=SensorDeviceClass.MONETARY, unit=monetary_unit, precision=2,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="change_percent", entity_name="Änderung %", unique_suffix="change_percent",
+                key="change_percent", unique_suffix="change_percent",
                 device_class=None, unit="%", precision=2,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="change_absolute", entity_name="Änderung", unique_suffix="change_absolute",
+                key="change_absolute", unique_suffix="change_absolute",
                 device_class=SensorDeviceClass.MONETARY, unit=monetary_unit, precision=3,
             ),
             INGStockLastUpdateSensor(coordinator, entry, isin, display_name),
@@ -94,36 +94,36 @@ async def async_setup_entry(
         sensors.extend([
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="dividend_yield", entity_name="Dividendenrendite", unique_suffix="dividend_yield",
+                key="dividend_yield", unique_suffix="dividend_yield",
                 device_class=None, unit="%", precision=4,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="dividend_per_share", entity_name="Dividende je Anteil", unique_suffix="dividend_per_share",
+                key="dividend_per_share", unique_suffix="dividend_per_share",
                 device_class=SensorDeviceClass.MONETARY, unit=monetary_unit, precision=3,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="price_earnings_ratio", entity_name="KGV", unique_suffix="price_earnings_ratio",
+                key="price_earnings_ratio", unique_suffix="price_earnings_ratio",
                 device_class=None, unit=None, precision=2,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="market_capitalization", entity_name="Marktkapitalisierung", unique_suffix="market_capitalization",
+                key="market_capitalization", unique_suffix="market_capitalization",
                 device_class=None, unit=None, precision=0,
             ),
             INGStockTextSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="market_cap_currency", entity_name="Marktkap.-Währung", unique_suffix="market_cap_currency",
+                key="market_cap_currency", unique_suffix="market_cap_currency",
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="52w_low", entity_name="52W Tief", unique_suffix="52w_low",
+                key="52w_low", unique_suffix="week52_low",
                 device_class=SensorDeviceClass.MONETARY, unit=monetary_unit, precision=3,
             ),
             INGStockValueSensor(
                 coordinator, entry, isin, display_name, instrument_type,
-                key="52w_high", entity_name="52W Hoch", unique_suffix="52w_high",
+                key="52w_high", unique_suffix="week52_high",
                 device_class=SensorDeviceClass.MONETARY, unit=monetary_unit, precision=3,
             ),
         ])
@@ -177,7 +177,6 @@ class INGStockValueSensor(INGStockBaseSensor):
         display_name: str,
         instrument_type: str,
         key: str,
-        entity_name: str,
         unique_suffix: str,
         device_class: SensorDeviceClass | None,
         unit: str | None,
@@ -188,7 +187,7 @@ class INGStockValueSensor(INGStockBaseSensor):
         self.key = key
         self._precision = precision
 
-        self._attr_name = entity_name
+        self._attr_translation_key = unique_suffix
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_unique_id = f"{DOMAIN}_{self.isin}_{unique_suffix}"
@@ -280,13 +279,12 @@ class INGStockTextSensor(INGStockBaseSensor):
         display_name: str,
         instrument_type: str,
         key: str,
-        entity_name: str,
         unique_suffix: str,
     ):
         super().__init__(coordinator, entry, isin, display_name)
         self.instrument_type = instrument_type
         self.key = key
-        self._attr_name = entity_name
+        self._attr_translation_key = unique_suffix
         self._attr_unique_id = f"{DOMAIN}_{self.isin}_{unique_suffix}"
 
     @property
@@ -327,7 +325,7 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
         super().__init__(coordinator, entry, isin, display_name)
         self.instrument_type = instrument_type
         self._quantity = quantity
-        self._attr_name = "Positionswert"
+        self._attr_translation_key = "position_value"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = None
@@ -366,7 +364,7 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
 
 class INGStockLastUpdateSensor(INGStockBaseSensor):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_name = "Letztes Update"
+    _attr_translation_key = "last_update"
     _attr_icon = "mdi:clock-outline"
 
     def __init__(

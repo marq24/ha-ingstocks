@@ -7,6 +7,8 @@ import random
 
 from typing import Any
 
+from aiohttp import ClientTimeout
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -39,11 +41,15 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return len(self.isin_list) == 0
 
     async def _async_update_data(self) -> dict[str, Any]:
-        data = {}
+        data: dict[str, Any] = {}
+        errors: list[str] = []
+        timeout = ClientTimeout(total=20)
+
         for isin in self.isin_list:
             # sleep for the second and all following isin's a random time...
             if len(data) > 0:
                 await asyncio.sleep(random.uniform(1, 5))
+
             header_url = (
                 f"https://component-api.wertpapiere.ing.de/api/v1/instrument-header?isinOrSearchTerm={isin}&isKnownIsin=true&includeAvailableExchanges=true"
             )
@@ -51,17 +57,25 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"https://component-api.wertpapiere.ing.de/api/v1/share-ng/keyfigures/{isin}"
             )
             try:
-                # 1) instrumentheader (Basisdaten) – wie RalfEs73
-                async with self.session.get(header_url, timeout=20) as resp:
+                async with self.session.get(header_url, timeout=timeout) as resp:
                     if resp.status != 200:
-                        raise UpdateFailed(f"instrumentheader HTTP {resp.status}")
+                        _LOGGER.warning("instrumentheader HTTP %s for %s", resp.status, isin)
+                        errors.append(isin)
+                        continue
                     header = await resp.json()
-                _LOGGER.debug(f"Request: {resp.request_info.url} - Status: {resp.status} - Response: {str(header)[:200]}")
+
+                _LOGGER.debug(
+                    "Request: %s - Status: %s - Response: %s",
+                    resp.request_info.url, resp.status, str(header)[:200],
+                )
+
                 price = header.get("price")
                 if price is None:
-                    raise UpdateFailed(f"No price in instrumentheader for {isin}")
+                    _LOGGER.warning("No price in instrumentheader for %s", isin)
+                    errors.append(isin)
+                    continue
 
-                # 2) keyfigures (optional)
+                # keyfigures (optional, currently disabled)
                 keyfigures: dict[str, Any] = {}
                 keyfigures_available = False
 
@@ -75,33 +89,45 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 #         keyfigures = await resp.json()
                 #         keyfigures_available = isinstance(keyfigures, dict)
 
-            except UpdateFailed:
-                raise
+                # 1:1 Attribute-Mapping wie in RalfEs73 sensor.py
+                isin_data: dict[str, Any] = {
+                    "name": header.get("name"),
+                    "isin": header.get("isin") or isin,
+                    "currency": header.get("currencySign"),
+                    "change_percent": header.get("changePercent"),
+                    "change_absolute": header.get("changeAbsolute"),
+                    "exchange": header.get("exchangeName"),
+                    "last_update": header.get("priceChangeDate"),
+                    "price": price,
+                    "keyfigures_available": bool(keyfigures_available),
+                    "dividend_yield": keyfigures.get("dividendYield"),
+                    "dividend_per_share": keyfigures.get("dividendPerShare"),
+                    "price_earnings_ratio": keyfigures.get("priceEarningsRatio"),
+                    "market_capitalization": keyfigures.get("marketCapitalization"),
+                    "market_cap_currency": keyfigures.get("marketCapitalizationCurrencyIsoCode"),
+                    "52w_low": keyfigures.get("fiftyTwoWeekLow"),
+                    "52w_high": keyfigures.get("fiftyTwoWeekHigh"),
+                }
+                data[isin] = isin_data
+
+            except TimeoutError:
+                _LOGGER.warning("Timeout fetching data for %s – skipping", isin)
+                errors.append(isin)
             except Exception as err:
-                raise UpdateFailed(f"Fetch error {isin}: {err}") from err
+                _LOGGER.warning("Error fetching data for %s: %s", isin, err)
+                errors.append(isin)
 
-            # >>> 1:1 Attribute-Mapping wie in RalfEs73 sensor.py <<<
-            isin_data: dict[str, Any] = {
-                "name": header.get("name"),
-                "isin": header.get("isin") or isin,
-                "currency": header.get("currencySign"),
-                "change_percent": header.get("changePercent"),
-                "change_absolute": header.get("changeAbsolute"),
-                "exchange": header.get("exchangeName"),
-                "last_update": header.get("priceChangeDate"),
-                "price": price,
+        # Keep previous data for ISINs that failed this cycle
+        if self.data:
+            for isin in errors:
+                if isin in self.data:
+                    data[isin] = self.data[isin]
+                    _LOGGER.debug("Reusing previous data for %s", isin)
 
-                # keyfigures meta
-                "keyfigures_available": bool(keyfigures_available),
+        if not data:
+            raise UpdateFailed(f"All ISINs failed: {errors}")
 
-                # keyfigures – wie RalfEs73
-                "dividend_yield": keyfigures.get("dividendYield"),
-                "dividend_per_share": keyfigures.get("dividendPerShare"),
-                "price_earnings_ratio": keyfigures.get("priceEarningsRatio"),
-                "market_capitalization": keyfigures.get("marketCapitalization"),
-                "market_cap_currency": keyfigures.get("marketCapitalizationCurrencyIsoCode"),
-                "52w_low": keyfigures.get("fiftyTwoWeekLow"),
-                "52w_high": keyfigures.get("fiftyTwoWeekHigh"),
-             }
-            data[isin] = isin_data
+        if errors:
+            _LOGGER.info("Update completed with errors for: %s", ", ".join(errors))
+
         return data
