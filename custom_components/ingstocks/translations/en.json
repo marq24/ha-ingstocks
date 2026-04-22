@@ -16,7 +16,7 @@
         "title": "Manage ISINs",
         "description": "Select an ISIN to edit or add a new one.",
         "data": {
-          "selected_isin": "ISIN",
+          "selected_isin": "Select your action",
           "scan_interval": "Update interval (minutes)"
         },
         "actions": {
@@ -49,7 +49,7 @@
         "title": "Delete ISIN",
         "description": "Please select the ISIN that should be deleted",
         "data": {
-          "selected_isin": "ISIN"
+          "selected_isin": "Select the ISIN to be deleted"
         }
       }
     },
