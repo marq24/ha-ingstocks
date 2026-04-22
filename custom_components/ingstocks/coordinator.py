@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import logging
-import socket
 import asyncio
+import logging
 import random
+import socket
 import zoneinfo
-
 from typing import Any
 
 from aiohttp import ClientTimeout
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -94,19 +92,16 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 async with self.session.get(header_url, timeout=timeout) as resp:
                     if resp.status != 200:
-                        _LOGGER.warning("instrumentheader HTTP %s for %s", resp.status, isin)
+                        _LOGGER.warning(f"instrument-header HTTP {resp.status} for {isin}")
                         errors.append(isin)
                         continue
                     header = await resp.json()
 
-                _LOGGER.debug(
-                    "Request: %s - Status: %s - Response: %s",
-                    resp.request_info.url, resp.status, str(header)[:200],
-                )
+                _LOGGER.debug(f"Request: {resp.request_info.url} - Status: {resp.status} - Response: {str(header)[:200]}")
 
                 price = header.get("price")
                 if price is None:
-                    _LOGGER.warning("No price in instrumentheader for %s", isin)
+                    _LOGGER.warning(f"No price in instrument-header for {isin}")
                     errors.append(isin)
                     continue
 
@@ -114,15 +109,16 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 keyfigures: dict[str, Any] = {}
                 keyfigures_available = False
 
-                # async with self.session.get(keyfigures_url, timeout=20) as resp:
-                #     if resp.status == 404:
-                #         # bei vielen Instrumenten (ETFs etc.) normal
-                #         _LOGGER.debug("No keyfigures for %s (HTTP 404).", self.isin)
-                #     elif resp.status != 200:
-                #         raise UpdateFailed(f"keyfigures HTTP {resp.status}")
-                #     else:
-                #         keyfigures = await resp.json()
-                #         keyfigures_available = isinstance(keyfigures, dict)
+                if "ETF" in header.get("additionalMetaInformation", []):
+                    pass
+                else:
+                    async with self.session.get(keyfigures_url, timeout=timeout) as resp:
+                        if resp.status != 200:
+                            _LOGGER.warning(f"keyfigures HTTP {resp.status} for {isin}")
+                            errors.append(isin)
+                            continue
+                        keyfigures = await resp.json()
+                        keyfigures_available = isinstance(keyfigures, dict)
 
                 # 1:1 Attribute-Mapping wie in RalfEs73 sensor.py
                 isin_data: dict[str, Any] = {
