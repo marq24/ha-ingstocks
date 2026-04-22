@@ -22,6 +22,7 @@
         "actions": {
           "add_new": "➕ Add new ISIN",
           "delete_isin": "🗑️ Delete ISIN",
+          "edit_isin": "✏\uFE0F edit '{label}'",
           "save_close": "💾 Only save 'Update interval' & close"
         }
       },

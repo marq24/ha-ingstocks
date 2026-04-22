@@ -22,6 +22,7 @@
         "actions": {
           "add_new": "➕ Neue ISIN hinzufügen",
           "delete_isin": "🗑️ ISIN löschen",
+          "edit_isin": "✏\uFE0F '{label}' bearbeiten",
           "save_close": "💾 Nur 'Update-Intervall' aktualisieren & schließen"
         }
       },

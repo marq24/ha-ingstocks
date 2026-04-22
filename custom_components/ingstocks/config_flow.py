@@ -170,12 +170,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         options[DELETE_ISIN] = delete_label
 
         # Build selectable options: "ISIN - Name" for each existing + add-new
+        edit_label = translations.get(
+            f"component.{DOMAIN}.config.step.select_isin.actions.edit_isin",
+            "✏️ edit '{label}'",
+        )
         for isin in isins:
             cfg = isin_config.get(isin, {})
             label = cfg.get(CONF_NAME) or isin
             if label != isin:
                 label = f"{isin} – {label}"
-            options[isin] = f"✏️ {label}"
+            options[isin] = edit_label.replace('{label}', label)
 
         save_label = translations.get(
             f"component.{DOMAIN}.config.step.select_isin.actions.save_close",
