@@ -21,6 +21,7 @@
         },
         "actions": {
           "add_new": "➕ Neue ISIN hinzufügen",
+          "delete_isin": "🗑️ ISIN löschen",
           "save_close": "💾 Nur 'Update-Intervall' aktualisieren & schließen"
         }
       },
@@ -41,6 +42,13 @@
           "name": "Name (optional)",
           "instrument_type": "Instrument-Typ",
           "quantity": "Stückzahl (Anteile)"
+        }
+      },
+      "delete_isin": {
+        "title": "ISIN Löschen",
+        "description": "Wähle die zu löschende ISIN aus",
+        "data": {
+          "selected_isin": "ISIN"
         }
       }
     },

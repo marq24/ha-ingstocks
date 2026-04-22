@@ -1,11 +1,13 @@
 # config_flow.py
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigFlowResult, ConfigEntryState
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
@@ -19,6 +21,7 @@ from .const import (
     CONF_QUANTITY,
     CONF_SELECTED_ISIN,
     ADD_NEW_ISIN,
+    DELETE_ISIN,
     SAVE_AND_CLOSE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_QUANTITY,
@@ -26,6 +29,13 @@ from .const import (
     INSTRUMENT_TYPE_AUTO,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
+INGPLUS_CONF_ISIN = "isin"
+INGPLUS_CONF_NAME = "name"
+INGPLUS_CONF_INSTRUMENT_TYPE = "instrument_type"
+INGPLUS_CONF_QUANTITY = "quantity"
+INGPLUS_CONF_SCAN_INTERVAL = "scan_interval"
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 2
@@ -45,7 +55,49 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if entries:
             # Integration already set up → manage ISINs on existing entry
             self._existing_entry = entries[0]
-            return await self.async_step_select_isin()
+            if self._is_reconfigure:
+                return await self.async_step_select_isin()
+            else:
+                return await self.async_step_add_isin()
+
+        ingplus_entries = self.hass.config_entries.async_entries("ingstocksplus")
+        _LOGGER.debug(f"ingplus_entries: {ingplus_entries}")
+        _LOGGER.debug(f"ingplus_entries: {self.hass}")
+
+        if ingplus_entries and len(ingplus_entries) > 0:
+            imported_list = []
+            imported_dict = {}
+            imported_interval = None
+            for a_ingplus_entry in ingplus_entries:
+                if a_ingplus_entry.state ==  ConfigEntryState.LOADED:
+                    conf_obj = a_ingplus_entry.data
+                    if conf_obj and conf_obj.get(INGPLUS_CONF_ISIN, None) is not None:
+                        a_isin = conf_obj.get(INGPLUS_CONF_ISIN, None)
+                        a_name = conf_obj.get(INGPLUS_CONF_NAME, None)
+                        a_type = conf_obj.get(INGPLUS_CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
+                        a_quantity = conf_obj.get(INGPLUS_CONF_QUANTITY, 0)
+
+                        if imported_interval is None:
+                            imported_interval = conf_obj.get(INGPLUS_CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+
+                        if a_isin is not None:
+                            imported_list.append(a_isin)
+                            imported_dict[a_isin] = {
+                                CONF_NAME: a_name,
+                                CONF_QUANTITY: a_quantity,
+                                CONF_INSTRUMENT_TYPE: a_type,
+                            }
+            if len(imported_list) > 0:
+                await self.async_set_unique_id(DOMAIN)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title="ING Stocks",
+                    data={
+                        CONF_SCAN_INTERVAL: imported_interval,
+                        CONF_ISINS: imported_list,
+                        CONF_ISIN_CONFIG: imported_dict,
+                    },
+                )
 
         # First-time setup: ISIN + global scan_interval
         if user_input is None:
@@ -111,6 +163,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "➕ Add new ISIN",
         )
         options[ADD_NEW_ISIN] = add_label
+        delete_label = translations.get(
+            f"component.{DOMAIN}.config.step.select_isin.actions.delete_isin",
+            "🗑️ Delete ISIN",
+        )
+        options[DELETE_ISIN] = delete_label
 
         # Build selectable options: "ISIN - Name" for each existing + add-new
         for isin in isins:
@@ -118,14 +175,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             label = cfg.get(CONF_NAME) or isin
             if label != isin:
                 label = f"{isin} – {label}"
-            options[isin] = label
+            options[isin] = f"✏️ {label}"
 
         save_label = translations.get(
             f"component.{DOMAIN}.config.step.select_isin.actions.save_close",
             "💾 Save interval & close",
         )
-        if self._is_reconfigure:
-            options[SAVE_AND_CLOSE] = save_label
+        options[SAVE_AND_CLOSE] = save_label
 
         if user_input is None:
             current_scan = int(
@@ -139,17 +195,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }),
             )
 
-        # Save potentially updated scan_interval
-        new_scan = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-        if new_scan != int(entry_data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)):
-            new_data = dict(entry_data)
-            new_data[CONF_SCAN_INTERVAL] = new_scan
-            self.hass.config_entries.async_update_entry(self._existing_entry, data=new_data)
+        # Save potentially updated scan_interval (reconfigure only)
+        if self._is_reconfigure and CONF_SCAN_INTERVAL in user_input:
+            new_scan = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+            if new_scan != int(entry_data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)):
+                new_data = dict(entry_data)
+                new_data[CONF_SCAN_INTERVAL] = new_scan
+                self.hass.config_entries.async_update_entry(self._existing_entry, data=new_data)
 
         selected = user_input[CONF_SELECTED_ISIN]
 
         if selected == SAVE_AND_CLOSE:
-            # Just save scan_interval and close
             await self.hass.config_entries.async_reload(
                 self._existing_entry.entry_id
             )
@@ -158,8 +214,60 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if selected == ADD_NEW_ISIN:
             return await self.async_step_add_isin()
 
+        if selected == DELETE_ISIN:
+            return await self.async_step_delete_isin()
+
         self._editing_isin = selected
         return await self.async_step_edit_isin()
+
+    # ------------------------------------------------------------------
+    # STEP: delete_isin
+    # ------------------------------------------------------------------
+    async def async_step_delete_isin(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        assert self._existing_entry is not None
+        entry_data = self._existing_entry.data
+        isins: list[str] = list(entry_data.get(CONF_ISINS, []))
+        isin_config: dict[str, dict] = entry_data.get(CONF_ISIN_CONFIG, {})
+
+        options: dict[str, str] = {}
+        for isin in isins:
+            cfg = isin_config.get(isin, {})
+            label = cfg.get(CONF_NAME) or isin
+            if label != isin:
+                label = f"{isin} – {label}"
+            options[isin] = label
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="delete_isin",
+                data_schema=vol.Schema({
+                    vol.Required(CONF_SELECTED_ISIN): vol.In(options),
+                }),
+            )
+
+        to_delete = user_input[CONF_SELECTED_ISIN]
+        device_reg = dr.async_get(self.hass)
+        entity_reg = er.async_get(self.hass)
+        device = device_reg.async_get_device({(DOMAIN, to_delete)}, set())
+        if device is not None:
+            for ent in er.async_entries_for_device(
+                entity_reg, device.id, include_disabled_entities=True
+            ):
+                entity_reg.async_remove(ent.entity_id)
+            device_reg.async_remove_device(device.id)
+
+        new_data = dict(entry_data)
+        new_data[CONF_ISINS] = [i for i in isins if i != to_delete]
+        new_data[CONF_ISIN_CONFIG] = dict(isin_config)
+        new_data[CONF_ISIN_CONFIG].pop(to_delete, None)
+
+        self.hass.config_entries.async_update_entry(
+            self._existing_entry, data=new_data
+        )
+        await self.hass.config_entries.async_reload(
+            self._existing_entry.entry_id
+        )
+        return self.async_abort(reason="reconfigured")
 
     # ------------------------------------------------------------------
     # STEP: add_isin

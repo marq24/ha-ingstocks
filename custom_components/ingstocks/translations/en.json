@@ -21,6 +21,7 @@
         },
         "actions": {
           "add_new": "➕ Add new ISIN",
+          "delete_isin": "🗑️ Delete ISIN",
           "save_close": "💾 Only save 'Update interval' & close"
         }
       },
@@ -41,6 +42,13 @@
           "name": "Name (optional)",
           "instrument_type": "Instrument type",
           "quantity": "Quantity (shares/units)"
+        }
+      },
+      "delete_isin": {
+        "title": "Delete ISIN",
+        "description": "Please select the ISIN that should be deleted",
+        "data": {
+          "selected_isin": "ISIN"
         }
       }
     },

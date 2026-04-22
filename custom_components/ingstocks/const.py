@@ -15,6 +15,7 @@ CONF_QUANTITY = "quantity"
 # used internally in config flow
 CONF_SELECTED_ISIN = "selected_isin"
 ADD_NEW_ISIN = "__add_new__"
+DELETE_ISIN = "__delete_isin__"
 SAVE_AND_CLOSE = "__save_close__"
 
 DEFAULT_SCAN_INTERVAL = 15
