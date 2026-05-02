@@ -79,9 +79,9 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         timeout = ClientTimeout(total=20)
 
         for isin in self.isin_list:
-            # sleep for the second and all following isin's a random time...
+            # sleep for the 0.1 - 1.2 second and all following isin's...
             if len(data) > 0:
-                await asyncio.sleep(random.uniform(1, 5))
+                await asyncio.sleep(random.uniform(0.1, 1.2))
 
             header_url = (
                 f"https://component-api.wertpapiere.ing.de/api/v1/instrument-header?isinOrSearchTerm={isin}&isKnownIsin=true&includeAvailableExchanges=true"
